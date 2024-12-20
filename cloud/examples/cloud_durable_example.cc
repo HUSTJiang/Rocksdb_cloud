@@ -2,7 +2,9 @@
 #include <cstdio>
 #include <iostream>
 #include <string>
-
+#include <aws/core/Aws.h>
+#include <aws/s3/S3Client.h>
+#include <aws/core/auth/AWSCredentialsProviderChain.h>
 #include "rocksdb/cloud/db_cloud.h"
 #include "rocksdb/options.h"
 
@@ -16,8 +18,9 @@ std::string kDBPath = "/tmp/rocksdb_cloud_durable";
 // ensure that this bucket name is unique to you and does not
 // conflict with any other S3 users who might have already created
 // this bucket name.
-std::string kBucketSuffix = "cloud.durable.example.";
-std::string kRegion = "us-west-2";
+std::string kBucketSuffix = "jx-zonebucket--apne1-az1--x-s3";
+//std::string kBucketSuffix = "generalbuckets-jx";
+std::string kRegion = "ap-northeast-1";
 
 static const bool flushAtEnd = true;
 static const bool disableWAL = false;
@@ -26,10 +29,9 @@ int main() {
   // cloud environment config options here
   CloudFileSystemOptions cloud_fs_options;
 
-  // Store a reference to a cloud file system. A new cloud env object should be
+  // // Store a reference to a cloud file system. A new cloud env object should be
   // associated with every new cloud-db.
   std::shared_ptr<FileSystem> cloud_fs;
-
   cloud_fs_options.credentials.InitializeSimple(
       getenv("AWS_ACCESS_KEY_ID"), getenv("AWS_SECRET_ACCESS_KEY"));
   if (!cloud_fs_options.credentials.HasValid().ok()) {
@@ -40,23 +42,14 @@ int main() {
     return -1;
   }
 
-  // Append the user name to the bucket name in an attempt to make it
-  // globally unique. S3 bucket-names need to be globally unique.
-  // If you want to rerun this example, then unique user-name suffix here.
-  char* user = getenv("USER");
-  kBucketSuffix.append(user);
-
-  // "rockset." is the default bucket prefix
-  const std::string bucketPrefix = "rockset.";
-  cloud_fs_options.src_bucket.SetBucketName(kBucketSuffix, bucketPrefix);
-  cloud_fs_options.dest_bucket.SetBucketName(kBucketSuffix, bucketPrefix);
-
   // create a bucket name for debugging purposes
-  const std::string bucketName = bucketPrefix + kBucketSuffix;
-
+  const std::string bucketName = kBucketSuffix;
+  cloud_fs_options.resync_on_open =true;
   // Create a new AWS cloud env Status
   CloudFileSystem* cfs;
-  Status s = CloudFileSystem::NewAwsFileSystem(
+  Aws::SDKOptions sdkoptions;
+  Aws::InitAPI(sdkoptions);
+  Status s = CloudFileSystemEnv::NewAwsFileSystem(
       FileSystem::Default(), kBucketSuffix, kDBPath, kRegion, kBucketSuffix,
       kDBPath, kRegion, cloud_fs_options, nullptr, &cfs);
   if (!s.ok()) {
@@ -65,11 +58,10 @@ int main() {
     return -1;
   }
   cloud_fs.reset(cfs);
-
   // Create options and use the AWS file system that we created earlier
   auto cloud_env = NewCompositeEnv(cloud_fs);
   Options options;
-  options.env = cloud_env.get();
+  options.env = cloud_env.release();
   options.create_if_missing = true;
 
   // No persistent read-cache
@@ -78,7 +70,7 @@ int main() {
   // options for each write
   WriteOptions wopt;
   wopt.disableWAL = disableWAL;
-
+  std::cout << "openning db" <<std::endl;
   // open DB
   DBCloud* db;
   s = DBCloud::Open(options, kDBPath, persistent_cache, 0, &db);
@@ -125,7 +117,7 @@ int main() {
     db->Flush(FlushOptions());
   }
   delete db;
-
+  Aws::ShutdownAPI(sdkoptions);
   fprintf(stdout, "Successfully used db at path %s in bucket %s.\n",
           kDBPath.c_str(), bucketName.c_str());
   return 0;

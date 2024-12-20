@@ -91,6 +91,15 @@
 #include "utilities/merge_operators/bytesxor.h"
 #include "utilities/merge_operators/sortlist.h"
 #include "utilities/persistent_cache/block_cache_tier.h"
+using namespace std;
+
+#ifdef USE_AWS
+#include <aws/core/Aws.h>
+#include <aws/s3/S3Client.h>
+#include <aws/core/auth/AWSCredentialsProviderChain.h>
+#endif
+#include "rocksdb/cloud/db_cloud.h"
+#include "rocksdb/options.h"
 
 #ifdef MEMKIND
 #include "memory/memkind_kmem_allocator.h"
@@ -955,6 +964,10 @@ DEFINE_bool(optimistic_transaction_db, false,
 DEFINE_bool(transaction_db, false,
             "Open a TransactionDB instance. "
             "Required for randomtransaction benchmark.");
+
+DEFINE_bool(cloud_db, false,
+            "Open a CloudDB instance. "
+            "Required for RocksDB Cloud db_bench.");
 
 DEFINE_uint64(transaction_sets, 2,
               "Number of keys each transaction will "
@@ -4914,6 +4927,62 @@ class Benchmark {
       db->num_created = num_hot;
       db->num_hot = num_hot;
       db->cfh_idx_to_prob = std::move(cfh_idx_to_prob);
+    } else if (FLAGS_cloud_db) {
+            std::cout << "Using cloud db" << std::endl;
+      std::string kDBPath = "/tmp/benchmark";
+      std::string kBucketSuffix = "generalbuckets-jx";
+      std::string kRegion = "ap-northeast-1";
+      // cloud environment config options here
+      CloudFileSystemOptions cloud_fs_options;
+
+      // // Store a reference to a cloud file system. A new cloud env object should be
+      // associated with every new cloud-db.
+      std::shared_ptr<FileSystem> cloud_fs;
+      cloud_fs_options.credentials.InitializeSimple(
+          getenv("AWS_ACCESS_KEY_ID"), getenv("AWS_SECRET_ACCESS_KEY"));
+      if (!cloud_fs_options.credentials.HasValid().ok()) {
+        fprintf(
+            stderr,
+            "Please set env variables "
+            "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY with cloud credentials");
+        return ;
+      }
+
+      // create a bucket name for debugging purposes
+      const std::string bucketName = kBucketSuffix;
+      // Create a new AWS cloud env Status
+      CloudFileSystem* cfs;
+      Aws::SDKOptions sdkoptions;
+      Aws::InitAPI(sdkoptions);
+      s = CloudFileSystemEnv::NewAwsFileSystem(
+          FileSystem::Default(), kBucketSuffix, kDBPath, kRegion, kBucketSuffix,
+          kDBPath, kRegion, cloud_fs_options, nullptr, &cfs);
+      if (!s.ok()) {
+        fprintf(stderr, "Unable to create cloud env in bucket %s. %s\n",
+                bucketName.c_str(), s.ToString().c_str());
+        return ;
+      }
+      cloud_fs.reset(cfs);
+      // Create options and use the AWS file system that we created earlier
+      auto cloud_env = NewCompositeEnv(cloud_fs);
+      Options cloudoptions;
+      InitializeOptionsFromFlags(&cloudoptions);
+      cloudoptions.env = cloud_env.release();
+      cloudoptions.create_if_missing = true;
+      cloudoptions.hyper_level = 2;
+      cloudoptions.db_paths = {{kDBPath + "/ebs", 1024l * 1024 * 1024 * 1024},{kDBPath + "/s3", 1024l * 1024 * 1024 * 1024}};
+      std::string persistent_cache = "";
+      // options for each write
+      std::cout << "openning db" <<std::endl;
+      // open DB
+      DBCloud* clouddb;
+      s = DBCloud::Open(cloudoptions, kDBPath, persistent_cache, 0, &clouddb);
+      if (!s.ok()) {
+        fprintf(stderr, "Unable to open db at path %s with bucket %s. %s\n",
+                kDBPath.c_str(), bucketName.c_str(), s.ToString().c_str());
+        return ;
+      }
+      db->db = clouddb;
     } else if (FLAGS_readonly) {
       s = DB::OpenForReadOnly(options, db_name, &db->db);
     } else if (FLAGS_optimistic_transaction_db) {

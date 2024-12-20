@@ -281,6 +281,7 @@ inline struct io_uring* CreateIOUring() {
 
 class PosixRandomAccessFile : public FSRandomAccessFile {
  protected:
+  bool is_s3_compaction_read = false;
   std::string filename_;
   int fd_;
   bool use_direct_io_;
@@ -398,6 +399,7 @@ class PosixMmapReadableFile : public FSRandomAccessFile {
   std::string filename_;
   void* mmapped_region_;
   size_t length_;
+  bool is_s3_compaction_read = false;
 
  public:
   PosixMmapReadableFile(const int fd, const std::string& fname, void* base,

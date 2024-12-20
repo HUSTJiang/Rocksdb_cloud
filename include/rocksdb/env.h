@@ -73,6 +73,7 @@ const size_t kDefaultPageSize = 4 * 1024;
 
 // Options while opening a file to read/write
 struct EnvOptions {
+  mutable bool is_s3_compaction_read = false;
   // Construct with default Options
   EnvOptions();
 

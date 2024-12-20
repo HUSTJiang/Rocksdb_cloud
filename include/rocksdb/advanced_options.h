@@ -545,7 +545,7 @@ struct AdvancedColumnFamilyOptions {
   //   https://github.com/facebook/rocksdb/wiki/Leveled-Compaction#migrating-from-level_compaction_dynamic_level_bytesfalse-to-level_compaction_dynamic_level_bytestrue
   //
   // Default: true
-  bool level_compaction_dynamic_level_bytes = true;
+  bool level_compaction_dynamic_level_bytes = false;
 
   // Default: 10.
   //

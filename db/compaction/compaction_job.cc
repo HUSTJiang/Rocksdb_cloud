@@ -11,6 +11,9 @@
 
 #include <algorithm>
 #include <cinttypes>
+#include <cstdint>
+#include <cstdio>
+#include<iostream>
 #include <memory>
 #include <optional>
 #include <set>
@@ -1839,7 +1842,15 @@ Status CompactionJob::OpenCompactionOutputFile(SubcompactionState* sub_compact,
 
   // no need to lock because VersionSet::next_file_number_ is atomic
   uint64_t file_number = versions_->NewFileNumber();
-  std::string fname = GetTableFileName(file_number);
+  //根据层数决定存储在哪个路径，后续根据路径决定存放位置
+  int path_id = 0;
+  std::string path;
+  if(sub_compact->compaction->output_level() > db_options_.hyper_level){
+    path_id = 1;
+  }
+  path = sub_compact->compaction->immutable_options()->db_paths[path_id].path;
+  std::string fname = MakeTableFileName(path,file_number);
+  //std::string fname = GetTableFileName(file_number);
   // Fire events.
   ColumnFamilyData* cfd = sub_compact->compaction->column_family_data();
   EventHelpers::NotifyTableFileCreationStarted(
@@ -1923,8 +1934,10 @@ Status CompactionJob::OpenCompactionOutputFile(SubcompactionState* sub_compact,
   uint64_t epoch_number = sub_compact->compaction->MinInputFileEpochNumber();
   {
     FileMetaData meta;
+    // meta.fd = FileDescriptor(file_number,
+    //                          sub_compact->compaction->output_path_id(), 0);
     meta.fd = FileDescriptor(file_number,
-                             sub_compact->compaction->output_path_id(), 0);
+                             path_id, 0);
     meta.oldest_ancester_time = oldest_ancester_time;
     meta.file_creation_time = current_time;
     meta.epoch_number = epoch_number;

@@ -30,10 +30,23 @@
 #include <aws/s3/model/HeadObjectResult.h>
 #include <aws/s3/model/ListObjectsRequest.h>
 #include <aws/s3/model/ListObjectsResult.h>
+#include <aws/s3/model/ListObjectsV2Request.h>
+#include <aws/s3/model/ListObjectsV2Result.h>
 #include <aws/s3/model/PutObjectRequest.h>
 #include <aws/s3/model/PutObjectResult.h>
 #include <aws/s3/model/ServerSideEncryption.h>
 #include <aws/transfer/TransferManager.h>
+#include <aws/core/utils/stream/PreallocatedStreamBuf.h>
+#include <aws/core/utils/memory/stl/AWSStringStream.h>
+#include <aws/s3/model/CreateMultipartUploadRequest.h>
+#include <aws/s3/model/UploadPartRequest.h>
+#include <aws/s3/model/CompleteMultipartUploadRequest.h>
+#include <aws/s3/model/CompletedMultipartUpload.h>
+#include <aws/s3/model/CompletedPart.h>
+#include <future>
+#include <vector>
+#include <stdexcept>
+
 #endif  // USE_AWS
 
 #include <cassert>
@@ -137,11 +150,11 @@ class AwsS3ClientWrapper {
     }
   }
 
-  Aws::S3::Model::ListObjectsOutcome ListCloudObjects(
-      const Aws::S3::Model::ListObjectsRequest& request) {
+  Aws::S3::Model::ListObjectsV2Outcome ListCloudObjectsV2(
+      const Aws::S3::Model::ListObjectsV2Request& request) {
     CloudRequestCallbackGuard t(cloud_request_callback_.get(),
                                 CloudRequestOpType::kListOp);
-    auto outcome = client_->ListObjects(request);
+    auto outcome = client_->ListObjectsV2(request);
     t.SetSuccess(outcome.IsSuccess());
     return outcome;
   }
@@ -443,6 +456,8 @@ class S3StorageProvider : public CloudStorageProviderImpl {
 
   // The S3 client
   std::shared_ptr<AwsS3ClientWrapper> s3client_;
+
+  Aws::S3::S3Client s3_client;
 };
 
 Status S3StorageProvider::PrepareOptions(const ConfigOptions& options) {
@@ -623,16 +638,16 @@ IOStatus S3StorageProvider::ListCloudObjects(const std::string& bucket_name,
 
   // get info of bucket+object
   while (loop) {
-    Aws::S3::Model::ListObjectsRequest request;
+    Aws::S3::Model::ListObjectsV2Request request;
     request.SetBucket(ToAwsString(bucket_name));
     request.SetMaxKeys(cfs_->GetCloudFileSystemOptions()
                            .number_objects_listed_in_one_iteration);
 
     request.SetPrefix(ToAwsString(prefix));
-    request.SetMarker(marker);
+    //request.SetMarker(marker);
 
-    Aws::S3::Model::ListObjectsOutcome outcome =
-        s3client_->ListCloudObjects(request);
+    Aws::S3::Model::ListObjectsV2Outcome outcome =
+        s3client_->ListCloudObjectsV2(request);
     bool isSuccess = outcome.IsSuccess();
     if (!isSuccess) {
       const Aws::Client::AWSError<Aws::S3::S3Errors>& error =
@@ -646,7 +661,7 @@ IOStatus S3StorageProvider::ListCloudObjects(const std::string& bucket_name,
       }
       return IOStatus::IOError(object_path, errmsg.c_str());
     }
-    const Aws::S3::Model::ListObjectsResult& res = outcome.GetResult();
+    const Aws::S3::Model::ListObjectsV2Result& res = outcome.GetResult();
     const Aws::Vector<Aws::S3::Model::Object>& objs = res.GetContents();
     for (const auto& o : objs) {
       const Aws::String& key = o.GetKey();
@@ -665,13 +680,13 @@ IOStatus S3StorageProvider::ListCloudObjects(const std::string& bucket_name,
       break;
     }
     // The new starting point
-    marker = res.GetNextMarker();
+    //marker = res.GetNextMarker();
     if (marker.empty()) {
       // If response does not include the NextMaker and it is
       // truncated, you can use the value of the last Key in the response
       // as the marker in the subsequent request because all objects
       // are returned in alphabetical order
-      marker = objs.back().GetKey();
+      //marker = objs.back().GetKey();
     }
   }
   return IOStatus::OK();
@@ -716,17 +731,19 @@ IOStatus S3StorageProvider::GetCloudObjectMetadata(
 IOStatus S3StorageProvider::PutCloudObjectMetadata(
     const std::string& bucket_name, const std::string& object_path,
     const std::unordered_map<std::string, std::string>& metadata) {
+  //Aws::S3::S3Client s3_client;
   Aws::S3::Model::PutObjectRequest request;
   Aws::Map<Aws::String, Aws::String> aws_metadata;
   for (const auto& m : metadata) {
-    aws_metadata[ToAwsString(m.first)] = ToAwsString(m.second);
+    aws_metadata[m.first] = m.second;
   }
-  request.SetBucket(ToAwsString(bucket_name));
-  request.SetKey(ToAwsString(object_path));
+  request.SetBucket(bucket_name);
+  request.SetKey(object_path);
   request.SetMetadata(aws_metadata);
-  SetEncryptionParameters(cfs_->GetCloudFileSystemOptions(), request);
-
-  auto outcome = s3client_->PutCloudObject(request);
+  //SetEncryptionParameters(cfs_->GetCloudFileSystemOptions(), request);
+ 
+  //auto outcome = s3client_->PutCloudObject(request);
+  auto outcome = s3_client.PutObject(request);
   bool isSuccess = outcome.IsSuccess();
   if (!isSuccess) {
     const auto& error = outcome.GetError();
@@ -1043,9 +1060,112 @@ IOStatus S3StorageProvider::DoPutCloudObject(const std::string& local_file,
           bucket_name.c_str(), object_path.c_str(), file_size, errmsg.c_str());
       return IOStatus::IOError(local_file, errmsg);
     }
+    // const size_t part_size = 32 * 1024 * 1024; // 每部分 8MB
+    // const size_t max_concurrent_uploads = 2; // 最大并发数
+
+    // Aws::S3::Model::CreateMultipartUploadRequest createRequest;
+    // createRequest.SetBucket(ToAwsString(bucket_name));
+    // createRequest.SetKey(ToAwsString(object_path));
+    // SetEncryptionParameters(cfs_->GetCloudFileSystemOptions(), createRequest);
+
+    // auto createOutcome = s3_client.CreateMultipartUpload(createRequest);
+    // if (!createOutcome.IsSuccess()) {
+    //   const auto& error = createOutcome.GetError();
+    //   std::string errmsg(error.GetMessage().c_str(), error.GetMessage().size());
+    //   Log(InfoLogLevel::ERROR_LEVEL, cfs_->GetLogger(),
+    //       "[s3] CreateMultipartUpload %s/%s, size %" PRIu64 ", ERROR %s",
+    //       bucket_name.c_str(), object_path.c_str(), file_size, errmsg.c_str());
+    //   return IOStatus::IOError(local_file, errmsg);
+    // }
+
+    // auto uploadId = createOutcome.GetResult().GetUploadId();
+    // std::ifstream fileStream(local_file, std::ios::binary);
+    // if (!fileStream.is_open()) {
+    //   return IOStatus::IOError(local_file, "Failed to open file");
+    // }
+
+    // std::vector<Aws::S3::Model::CompletedPart> completedParts;
+    // std::mutex completedPartsMutex;
+    // std::vector<std::future<void>> futures;
+
+    // size_t partNumber = 1;
+    // while (fileStream.good()) {
+    //   std::vector<char> buffer(part_size);
+    //   fileStream.read(buffer.data(), buffer.size());
+    //   auto bytesRead = fileStream.gcount();
+
+    //   if (bytesRead > 0) {
+    //     // 使用异步任务上传分段
+    //     futures.push_back(std::async(std::launch::async, [&, partNumber, bytesRead, buffer]() {
+    //       Aws::S3::Model::UploadPartRequest uploadPartRequest;
+    //       uploadPartRequest.SetBucket(ToAwsString(bucket_name));
+    //       uploadPartRequest.SetKey(ToAwsString(object_path));
+    //       uploadPartRequest.SetUploadId(uploadId);
+    //       uploadPartRequest.SetPartNumber(partNumber);
+    //       uploadPartRequest.SetContentLength(bytesRead);
+
+    //       auto partData = Aws::MakeShared<Aws::StringStream>("UploadPartStream");
+    //       partData->write(buffer.data(), bytesRead);
+    //       uploadPartRequest.SetBody(partData);
+
+    //       auto uploadPartOutcome = s3_client.UploadPart(uploadPartRequest);
+    //       if (!uploadPartOutcome.IsSuccess()) {
+    //         const auto& error = uploadPartOutcome.GetError();
+    //         std::string errmsg(error.GetMessage().c_str(), error.GetMessage().size());
+    //         Log(InfoLogLevel::ERROR_LEVEL, cfs_->GetLogger(),
+    //             "[s3] UploadPart %s/%s, part %zu, ERROR %s",
+    //             bucket_name.c_str(), object_path.c_str(), partNumber, errmsg.c_str());
+    //         throw std::runtime_error(errmsg);
+    //       }
+
+    //       Aws::S3::Model::CompletedPart completedPart;
+    //       completedPart.SetPartNumber(partNumber);
+    //       completedPart.SetETag(uploadPartOutcome.GetResult().GetETag());
+
+    //       std::lock_guard<std::mutex> lock(completedPartsMutex);
+    //       completedParts.push_back(completedPart);
+    //     }));
+
+    //     if (futures.size() >= max_concurrent_uploads) {
+    //       for (auto& future : futures) {
+    //         future.get(); // 等待所有任务完成
+    //       }
+    //       futures.clear();
+    //     }
+
+    //     partNumber++;
+    //   }
+    // }
+
+    // // 等待所有剩余的上传任务完成
+    // for (auto& future : futures) {
+    //   future.get();
+    // }
+    // std::sort(completedParts.begin(), completedParts.end(),
+    //           [](const Aws::S3::Model::CompletedPart& a, const Aws::S3::Model::CompletedPart& b) {
+    //             return a.GetPartNumber() < b.GetPartNumber();
+    //           });
+    // Aws::S3::Model::CompleteMultipartUploadRequest completeRequest;
+    // completeRequest.SetBucket(ToAwsString(bucket_name));
+    // completeRequest.SetKey(ToAwsString(object_path));
+    // completeRequest.SetUploadId(uploadId);
+
+    // Aws::S3::Model::CompletedMultipartUpload completedUpload;
+    // completedUpload.SetParts(completedParts);
+    // completeRequest.SetMultipartUpload(completedUpload);
+
+    // auto completeOutcome = s3_client.CompleteMultipartUpload(completeRequest);
+    // if (!completeOutcome.IsSuccess()) {
+    //   const auto& error = completeOutcome.GetError();
+    //   std::string errmsg(error.GetMessage().c_str(), error.GetMessage().size());
+    //   Log(InfoLogLevel::ERROR_LEVEL, cfs_->GetLogger(),
+    //       "[s3] CompleteMultipartUpload %s/%s, ERROR %s",
+    //       bucket_name.c_str(), object_path.c_str(), errmsg.c_str());
+    //   return IOStatus::IOError(local_file, errmsg);
+    // }
   }
   Log(InfoLogLevel::INFO_LEVEL, cfs_->GetLogger(),
-      "[s3] PutCloudObject %s/%s, size %" PRIu64 ", OK", bucket_name.c_str(),
+      "[s3] PutCloudObject localfile %s ro %s/%s, size %" PRIu64 ", OK", local_file.c_str(),bucket_name.c_str(),
       object_path.c_str(), file_size);
   return IOStatus::OK();
 }

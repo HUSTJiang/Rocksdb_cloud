@@ -152,6 +152,11 @@ IOStatus CloudFileSystemImpl::NewCloudReadableFile(
   return st;
 }
 
+static bool isEBS(const std::string& fname){
+  // Judge if file store in EBS
+  return fname.find("ebs") != std::string::npos;
+}
+
 // open a file for sequential reading
 IOStatus CloudFileSystemImpl::NewSequentialFile(
     const std::string& logical_fname, const FileOptions& file_opts,
@@ -169,7 +174,13 @@ IOStatus CloudFileSystemImpl::NewSequentialFile(
   if (!st.ok()) {
     return st;
   }
-
+  if (sstfile && isEBS(fname)) {
+    st = base_fs_->NewSequentialFile(fname, file_opts, result, dbg);
+    if (st.ok()) {
+      return st;
+    }
+    printf("ERROR: sst %s not found on ebs\n", fname.c_str());
+  }
   if (sstfile || manifest || identity) {
     if (cloud_fs_options.keep_local_sst_files || !sstfile) {
       // We read first from local storage and then from cloud storage.
@@ -237,10 +248,16 @@ IOStatus CloudFileSystemImpl::NewRandomAccessFile(
   if (!st.ok()) {
     return st;
   }
-
+  if (sstfile && isEBS(fname)) {
+    st = base_fs_->NewRandomAccessFile(fname, file_opts, result, dbg);
+    if (st.ok()) {
+      return st;
+    }
+    printf("ERROR: sst %s not found on ebs\n", fname.c_str());
+  }
   const IOOptions io_opts;
   if (sstfile || manifest || identity) {
-    if (cloud_fs_options.keep_local_sst_files || !sstfile) {
+    if (cloud_fs_options.keep_local_sst_files || !sstfile ||file_opts.is_s3_compaction_read) {
       // Read from local storage and then from cloud storage.
       st = base_fs_->NewRandomAccessFile(fname, file_opts, result, dbg);
 
@@ -318,7 +335,13 @@ IOStatus CloudFileSystemImpl::NewWritableFile(
        manifest = (file_type == RocksDBFileType::kManifestFile),
        identity = (file_type == RocksDBFileType::kIdentityFile),
        logfile = (file_type == RocksDBFileType::kLogFile);
-
+  if (sstfile && isEBS(fname)) {
+    IOStatus s = base_fs_->NewWritableFile(fname, file_opts, result, dbg);
+    if (s.ok()) {
+      return s;
+    }
+    printf("ERROR: sst %s not found on ebs\n", fname.c_str());
+  }
   IOStatus s;
   if (HasDestBucket() && (sstfile || identity || manifest)) {
     std::unique_ptr<CloudStorageWritableFile> f;

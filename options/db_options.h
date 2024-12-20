@@ -19,7 +19,8 @@ struct ImmutableDBOptions {
   explicit ImmutableDBOptions(const DBOptions& options);
 
   void Dump(Logger* log) const;
-
+  int hyper_level = 0;
+  bool enable_s3_compaction_read = true;
   bool create_if_missing;
   std::shared_ptr<ReplicationLogListener> replication_log_listener;
   std::shared_ptr<ReplicationEpochExtractor> replication_epoch_extractor;

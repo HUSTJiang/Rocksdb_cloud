@@ -17,7 +17,7 @@ std::string kDBPath = "/tmp/rocksdb_cloud_durable";
 // conflict with any other S3 users who might have already created
 // this bucket name.
 std::string kBucketSuffix = "cloud.durable.example.";
-std::string kRegion = "us-west-2";
+std::string kRegion = "ap-northeast-1";
 
 int main() {
   // cloud environment config options here
@@ -53,7 +53,7 @@ int main() {
 
   // Create a new AWS cloud env Status
   CloudFileSystem* cfs;
-  Status s = CloudFileSystem::NewAwsFileSystem(
+  Status s = CloudFileSystemEnv::NewAwsFileSystem(
       FileSystem::Default(), kBucketSuffix, kDBPath, kRegion, kBucketSuffix,
       kDBPath, kRegion, cloud_fs_options, nullptr, &cfs);
   if (!s.ok()) {
