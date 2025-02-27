@@ -680,6 +680,8 @@ struct DBOptions {
   // Default: Env::Default()
   Env* env = Env::Default();
 
+  Env* base_env = Env::Default();
+
   // Limits internal file read/write bandwidth:
   //
   // - Flush requests write bandwidth at `Env::IOPriority::IO_HIGH`

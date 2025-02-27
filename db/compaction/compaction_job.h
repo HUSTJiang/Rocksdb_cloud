@@ -297,8 +297,10 @@ class CompactionJob {
   const FileOptions file_options_;
 
   Env* env_;
+  Env* base_env_;
   std::shared_ptr<IOTracer> io_tracer_;
   FileSystemPtr fs_;
+  FileSystemPtr bfs_;
   // env_option optimized for compaction table reads
   FileOptions file_options_for_read_;
   VersionSet* versions_;

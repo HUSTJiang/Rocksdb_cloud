@@ -165,8 +165,10 @@ CompactionJob::CompactionJob(
       db_session_id_(db_session_id),
       file_options_(file_options),
       env_(db_options.env),
+      base_env_(db_options.base_env),
       io_tracer_(io_tracer),
       fs_(db_options.fs, io_tracer),
+      bfs_(db_options.bfs, io_tracer),
       file_options_for_read_(
           fs_->OptimizeForCompactionTableRead(file_options, db_options_)),
       versions_(versions),
@@ -1848,9 +1850,9 @@ Status CompactionJob::OpenCompactionOutputFile(SubcompactionState* sub_compact,
   if(sub_compact->compaction->output_level() > db_options_.hyper_level){
     path_id = 1;
   }
-  path = sub_compact->compaction->immutable_options()->db_paths[path_id].path;
-  std::string fname = MakeTableFileName(path,file_number);
-  //std::string fname = GetTableFileName(file_number);
+  //path = sub_compact->compaction->immutable_options()->db_paths[path_id].path;
+  //std::string fname = MakeTableFileName(path,file_number);
+  std::string fname = GetTableFileName(file_number);
   // Fire events.
   ColumnFamilyData* cfd = sub_compact->compaction->column_family_data();
   EventHelpers::NotifyTableFileCreationStarted(
@@ -1879,7 +1881,12 @@ Status CompactionJob::OpenCompactionOutputFile(SubcompactionState* sub_compact,
   fo_copy.temperature = temperature;
 
   Status s;
-  IOStatus io_s = NewWritableFile(fs_.get(), fname, &writable_file, fo_copy);
+  IOStatus io_s;
+  if(path_id==0){
+    io_s = NewWritableFile(bfs_.get(), fname, &writable_file, fo_copy);
+  }else{
+    io_s = NewWritableFile(fs_.get(), fname, &writable_file, fo_copy);
+  }
   s = io_s;
   if (sub_compact->io_status.ok()) {
     sub_compact->io_status = io_s;
@@ -1934,10 +1941,10 @@ Status CompactionJob::OpenCompactionOutputFile(SubcompactionState* sub_compact,
   uint64_t epoch_number = sub_compact->compaction->MinInputFileEpochNumber();
   {
     FileMetaData meta;
-    // meta.fd = FileDescriptor(file_number,
-    //                          sub_compact->compaction->output_path_id(), 0);
     meta.fd = FileDescriptor(file_number,
-                             path_id, 0);
+                             sub_compact->compaction->output_path_id(), 0);
+    // meta.fd = FileDescriptor(file_number,
+    //                          path_id, 0);
     meta.oldest_ancester_time = oldest_ancester_time;
     meta.file_creation_time = current_time;
     meta.epoch_number = epoch_number;

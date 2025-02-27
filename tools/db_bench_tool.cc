@@ -4952,10 +4952,11 @@ class Benchmark {
       const std::string bucketName = kBucketSuffix;
       // Create a new AWS cloud env Status
       CloudFileSystem* cfs;
+      std::shared_ptr<rocksdb::FileSystem> bfs = FileSystem::Default();
       Aws::SDKOptions sdkoptions;
       Aws::InitAPI(sdkoptions);
       s = CloudFileSystemEnv::NewAwsFileSystem(
-          FileSystem::Default(), kBucketSuffix, kDBPath, kRegion, kBucketSuffix,
+          bfs, kBucketSuffix, kDBPath, kRegion, kBucketSuffix,
           kDBPath, kRegion, cloud_fs_options, nullptr, &cfs);
       if (!s.ok()) {
         fprintf(stderr, "Unable to create cloud env in bucket %s. %s\n",
@@ -4965,12 +4966,14 @@ class Benchmark {
       cloud_fs.reset(cfs);
       // Create options and use the AWS file system that we created earlier
       auto cloud_env = NewCompositeEnv(cloud_fs);
+      auto base_env = NewCompositeEnv(bfs);
       Options cloudoptions;
       InitializeOptionsFromFlags(&cloudoptions);
+      cloudoptions.base_env = base_env.release();
       cloudoptions.env = cloud_env.release();
       cloudoptions.create_if_missing = true;
       cloudoptions.hyper_level = 2;
-      cloudoptions.db_paths = {{kDBPath + "/ebs", 1024l * 1024 * 1024 * 1024},{kDBPath + "/s3", 1024l * 1024 * 1024 * 1024}};
+      //cloudoptions.db_paths = {{kDBPath + "/ebs", 1024l * 1024 * 1024 * 1024},{kDBPath + "/s3", 1024l * 1024 * 1024 * 1024}};
       std::string persistent_cache = "";
       // options for each write
       std::cout << "openning db" <<std::endl;
