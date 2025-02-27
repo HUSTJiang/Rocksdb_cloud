@@ -586,6 +586,7 @@ struct DBOptions {
   DBOptions* IncreaseParallelism(int total_threads = 16);
   bool enable_s3_compaction_read = false;
   int hyper_level = 2;
+  std::string file_epoch;
 
   // If true, the database will be created if it is missing.
   // Default: false

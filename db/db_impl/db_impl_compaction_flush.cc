@@ -8,7 +8,7 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 #include <cinttypes>
 #include <deque>
-
+#include <iostream>
 #include "db/builder.h"
 #include "db/db_impl/db_impl.h"
 #include "db/error_handler.h"
@@ -29,6 +29,11 @@
 #include "util/coding.h"
 #include "util/concurrent_task_limiter_impl.h"
 #include "util/udt_util.h"
+#include "file/filename.h"
+#include <aws/core/Aws.h>
+#include <aws/s3/S3Client.h>
+#include <aws/s3/model/PutObjectRequest.h>
+#include <fstream>
 
 namespace ROCKSDB_NAMESPACE {
 
@@ -3552,9 +3557,9 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
   bool is_prepicked = is_manual || c;
 
   // (manual_compaction->in_progress == false);
-  // bool trivial_move_disallowed =
-  //     is_manual && manual_compaction->disallow_trivial_move;
-  bool trivial_move_disallowed = true;
+  bool trivial_move_disallowed =
+      is_manual && manual_compaction->disallow_trivial_move;
+  //bool trivial_move_disallowed = true;
 
   CompactionJobStats compaction_job_stats;
   Status status;
@@ -3798,8 +3803,13 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
       for (size_t i = 0; i < c->num_input_files(l); i++) {
         FileMetaData* f = c->input(l, i);
         c->edit()->DeleteFile(c->level(l), f->fd.GetNumber());
+        int path_id=0;
+        if(c->output_level() > c->immutable_options()->hyper_level){
+          path_id=1;
+        }
+        //std::cout<<"move:"<<c->immutable_options()->file_epoch<<std::endl;
         c->edit()->AddFile(
-            c->output_level(), f->fd.GetNumber(), f->fd.GetPathId(),
+            c->output_level(), f->fd.GetNumber(), path_id,
             f->fd.GetFileSize(), f->smallest, f->largest, f->fd.smallest_seqno,
             f->fd.largest_seqno, f->marked_for_compaction, f->temperature,
             f->oldest_blob_file_number, f->oldest_ancester_time,
@@ -3807,6 +3817,49 @@ Status DBImpl::BackgroundCompaction(bool* made_progress,
             f->file_checksum_func_name, f->unique_id,
             f->compensated_range_deletion_size, f->tail_size,
             f->user_defined_timestamps_persisted);
+        if(c->level(l) <= c->immutable_options()->hyper_level && path_id == 1){
+          std::string epoch = c->immutable_options()->file_epoch;
+          std::string path = c->immutable_options()->db_paths[0].path;
+          auto pos = path.rfind('/');
+          std::string basepath;
+          if (pos != std::string::npos) {
+            basepath = path.substr(0, pos + 1);
+          }
+          std::string local_file = MakeTableFileName(path,f->fd.GetNumber()) + "-" + epoch;
+          //std::cout << local_file <<std::endl;
+          std::string bucket_name = "generalbuckets-jx";
+          std::string object_key = MakeTableFileName(basepath,f->fd.GetNumber())+ "-" + epoch;
+          //std::cout << object_key <<std::endl;
+          Aws::S3::S3Client client;
+          Aws::SDKOptions options;
+          Aws::InitAPI(options);
+          {// 打开本地文件
+            auto inputData = Aws::MakeShared<Aws::FStream>(
+                "PutObjectInputStream",
+                local_file.c_str(),
+                std::ios_base::in | std::ios_base::binary
+            );
+            Aws::S3::Model::PutObjectRequest request;
+            request.SetBucket(bucket_name);
+            request.SetKey(object_key);
+            request.SetBody(inputData);
+            // 执行上传
+            auto outcome = client.PutObject(request);
+            if (!outcome.IsSuccess()) {
+              std::cerr << "上传失败: " << outcome.GetError().GetMessage() << std::endl;
+            }
+          }
+          Aws::ShutdownAPI(options);
+        }
+        // c->edit()->AddFile(
+        //     c->output_level(), f->fd.GetNumber(), f->fd.GetPathId(),
+        //     f->fd.GetFileSize(), f->smallest, f->largest, f->fd.smallest_seqno,
+        //     f->fd.largest_seqno, f->marked_for_compaction, f->temperature,
+        //     f->oldest_blob_file_number, f->oldest_ancester_time,
+        //     f->file_creation_time, f->epoch_number, f->file_checksum,
+        //     f->file_checksum_func_name, f->unique_id,
+        //     f->compensated_range_deletion_size, f->tail_size,
+        //     f->user_defined_timestamps_persisted);
 
         ROCKS_LOG_BUFFER(
             log_buffer,

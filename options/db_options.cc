@@ -776,6 +776,7 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       disable_delete_obsolete_files_on_open(options.disable_delete_obsolete_files_on_open),
       max_num_replication_epochs(options.max_num_replication_epochs) {
   hyper_level = options.hyper_level;
+  file_epoch = options.file_epoch;
   enable_s3_compaction_read = false;
   fs = env->GetFileSystem();
   clock = env->GetSystemClock().get();

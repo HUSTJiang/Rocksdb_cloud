@@ -191,7 +191,8 @@ Status DBCloud::Open(const Options& opt, const std::string& local_dbname,
   // We do not want a very large MANIFEST file because the MANIFEST file is
   // uploaded to S3 for every update, so always enable rolling of Manifest file
   options.max_manifest_file_size = DBCloudImpl::max_manifest_file_size;
-
+  CloudManifest* cloud_manifest_cfs= cfs->GetCloudManifest();
+  options.file_epoch= cloud_manifest_cfs->GetCurrentEpoch();
   DB* db = nullptr;
   std::string dbid;
   if (read_only) {
