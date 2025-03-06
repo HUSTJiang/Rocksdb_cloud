@@ -130,7 +130,9 @@ ColumnFamilyOptions::ColumnFamilyOptions(const Options& options)
 
 DBOptions::DBOptions() = default;
 DBOptions::DBOptions(const Options& options)
-    : DBOptions(*static_cast<const DBOptions*>(&options)) {}
+    : DBOptions(*static_cast<const DBOptions*>(&options)) {
+      started_at_ = options.started_at_;
+    }
 
 void DBOptions::Dump(Logger* log) const {
     ImmutableDBOptions(*this).Dump(log);

@@ -2717,6 +2717,38 @@ class Duration {
   uint64_t start_at_;
 };
 
+std::thread rocksdb_stat_thr;
+std::string rocksdb_stat_output_file = "./rocks_stat.log";
+std::atomic<bool> done = false;
+
+void printRocksDBStats(rocksdb::DB* db) {
+  const std::string& output_file = rocksdb_stat_output_file;
+  std::ofstream outFile =
+      std::ofstream(output_file, std::ios_base::app);  // 以追加模式打开文件
+  if (!outFile.is_open()) {
+    std::cerr << "Failed to open output file" << std::endl;
+    return;
+  }
+  while (true) {
+    uint64_t interval = 10;
+    std::this_thread::sleep_for(std::chrono::seconds(interval));
+    if (done) {
+      break;
+    }
+    outFile << ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>" << endl;
+    std::string res;
+    outFile << "rocksdb.stats" << endl;
+    db->GetProperty("rocksdb.stats", &res);
+    outFile << res << endl;
+    res.clear();
+    outFile << "rocksdb.block-stats" << endl;
+    db->GetProperty("rocksdb.block-cache-entry-stats", &res);
+    outFile << res << endl;
+    outFile << "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<" << endl;
+    outFile.flush();
+  }
+}
+
 class Benchmark {
  private:
   std::shared_ptr<Cache> cache_;
@@ -3431,6 +3463,7 @@ class Benchmark {
       ErrorExit();
     }
     Open(&open_options_);
+    //rocksdb_stat_thr = std::thread(printRocksDBStats, db_.db);
     PrintHeader(open_options_);
     std::stringstream benchmark_stream(FLAGS_benchmarks);
     std::string name;
@@ -3913,6 +3946,8 @@ class Benchmark {
       fprintf(stdout, "Secondary instance updated  %" PRIu64 " times.\n",
               secondary_db_updates_);
     }
+    done = true;
+    //rocksdb_stat_thr.join();
   }
 
  private:
@@ -4967,6 +5002,17 @@ class Benchmark {
       auto cloud_env = NewCompositeEnv(cloud_fs);
       Options cloudoptions;
       InitializeOptionsFromFlags(&cloudoptions);
+      cloudoptions.cloud_move=true;
+      // cloudoptions.compression = rocksdb::kNoCompression;
+      // cloudoptions.compaction_style = rocksdb::kCompactionStyleLevel;
+      // cloudoptions.enable_pipelined_write = true;
+      // cloudoptions.use_direct_reads = true;
+      // cloudoptions.use_direct_io_for_flush_and_compaction = true;
+      // cloudoptions.compaction_readahead_size = 4 * 1024 * 1024;
+      // cloudoptions.level0_file_num_compaction_trigger = 4;
+      // cloudoptions.level0_slowdown_writes_trigger = 20;
+      // cloudoptions.level0_stop_writes_trigger = 36;
+
       cloudoptions.env = cloud_env.release();
       cloudoptions.create_if_missing = true;
       cloudoptions.hyper_level = 2;

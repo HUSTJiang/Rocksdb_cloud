@@ -10,7 +10,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
-
+#include "rocksdb/system_clock.h"
 #include <atomic>
 #include <limits>
 #include <memory>
@@ -584,8 +584,9 @@ struct DBOptions {
   // cores. You almost definitely want to call this function if your system is
   // bottlenecked by RocksDB.
   DBOptions* IncreaseParallelism(int total_threads = 16);
-  bool enable_s3_compaction_read = false;
+  bool cloud_move = false;
   int hyper_level = 2;
+  uint64_t started_at_;
   std::string file_epoch;
 
   // If true, the database will be created if it is missing.
@@ -1608,11 +1609,23 @@ struct DBOptions {
 // Options to control the behavior of a database (passed to DB::Open)
 struct Options : public DBOptions, public ColumnFamilyOptions {
   // Create an Options object with default values for all fields.
-  Options() : DBOptions(), ColumnFamilyOptions() {}
+  Options() : DBOptions(), ColumnFamilyOptions() {
+    clock = env->GetSystemClock().get();
+    started_at_ = clock->NowMicros();
+  }
 
   Options(const DBOptions& db_options,
           const ColumnFamilyOptions& column_family_options)
-      : DBOptions(db_options), ColumnFamilyOptions(column_family_options) {}
+      : DBOptions(db_options), ColumnFamilyOptions(column_family_options) {
+        clock = env->GetSystemClock().get();
+        started_at_ = db_options.started_at_;;
+      }
+
+  SystemClock* clock;
+
+  uint64_t SecondsUp() const {
+    return clock->NowMicros();
+  }
 
   // Change to some default settings from an older version.
   // NOT MAINTAINED: This function has not been and is not maintained.

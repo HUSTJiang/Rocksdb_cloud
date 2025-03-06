@@ -19,9 +19,12 @@ struct ImmutableDBOptions {
   explicit ImmutableDBOptions(const DBOptions& options);
 
   void Dump(Logger* log) const;
+  uint64_t SecondsUp() const {
+    return clock->NowMicros();
+  }
   int hyper_level = 0;
   std::string file_epoch;
-  bool enable_s3_compaction_read = true;
+  bool cloud_move = false;
   bool create_if_missing;
   std::shared_ptr<ReplicationLogListener> replication_log_listener;
   std::shared_ptr<ReplicationEpochExtractor> replication_epoch_extractor;
@@ -106,6 +109,7 @@ struct ImmutableDBOptions {
   // Convenience/Helper objects that are not part of the base DBOptions
   std::shared_ptr<FileSystem> fs;
   SystemClock* clock;
+  uint64_t started_at_;
   Statistics* stats;
   Logger* logger;
   std::shared_ptr<CompactionService> compaction_service;

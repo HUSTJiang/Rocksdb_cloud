@@ -24,6 +24,9 @@ test_fenduan: librocksdb test_fenduan.cc
 test_bingfa: librocksdb test_bingfa.cc
 	$(CXX) $(CXXFLAGS) $@.cc -o $@ ../../librocksdb.a -I../../include $(OPT) -std=c++11 $(PLATFORM_LDFLAGS) $(PLATFORM_CXXFLAGS) $(EXEC_LDFLAGS)
 
+test_time: librocksdb test_time.cc
+	$(CXX) $(CXXFLAGS) $@.cc -o $@ ../../librocksdb.a -I../../include $(OPT) -std=c++11 $(PLATFORM_LDFLAGS) $(PLATFORM_CXXFLAGS) $(EXEC_LDFLAGS)
+
 clean:
 	rm -rf ./cloud_durable_example  ./clone_example ./cloud_dump
 

@@ -777,9 +777,10 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       max_num_replication_epochs(options.max_num_replication_epochs) {
   hyper_level = options.hyper_level;
   file_epoch = options.file_epoch;
-  enable_s3_compaction_read = false;
+  cloud_move = options.cloud_move;
   fs = env->GetFileSystem();
   clock = env->GetSystemClock().get();
+  started_at_ = clock->NowMicros();
   logger = info_log.get();
   stats = statistics.get();
 }
